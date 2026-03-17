@@ -11,27 +11,14 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-// 정적 파일(public 폴더) 서빙
-app.use(express.static('public'));
-
-// 2. DB 초기화 실행
-initDB();
-
-// 3. 전역 방(Room) 데이터 관리 객체
-const rooms = {};
-
-// 4. 분리된 소켓 로직 실행 (io, DB연결, 방 데이터를 넘겨줌)
-socketHandler(io, pool, rooms);
-
-// 5. 서버 포트 오픈
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`🚀 서버 실행 중... 포트: ${PORT}`));
-// ====== 유니티 연동용 로그인 API ======
-
-// 유니티에서 보낸 폼(Form) 데이터를 읽을 수 있게 해주는 설정 (상단에 없다면 추가해주세요)
+// [수정됨] 유니티 폼 데이터를 받기 위한 설정을 앞으로 끌어올렸습니다.
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
+// 정적 파일(public 폴더) 서빙
+app.use(express.static('public'));
+
+// ====== 유니티 연동용 로그인 API ======
 // 유니티가 접속할 주소: POST /api/login
 app.post('/api/login', async (req, res) => {
     // 유니티가 보낸 'id'와 'pw' 데이터를 꺼냅니다.
@@ -61,3 +48,17 @@ app.post('/api/login', async (req, res) => {
         return res.status(500).send("서버 내부 DB 오류");
     }
 });
+// ===================================
+
+// 2. DB 초기화 실행
+initDB();
+
+// 3. 전역 방(Room) 데이터 관리 객체
+const rooms = {};
+
+// 4. 분리된 소켓 로직 실행 (io, DB연결, 방 데이터를 넘겨줌)
+socketHandler(io, pool, rooms);
+
+// 5. 서버 포트 오픈 (맨 마지막에 위치)
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => console.log(`🚀 서버 실행 중... 포트: ${PORT}`));
