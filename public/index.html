@@ -5,20 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>저녁 대난투</title>
     <style>
-        /* 프리미엄 모바일/웹 UI 스타일 */
         body { margin: 0; padding: 0; font-family: 'Malgun Gothic', sans-serif; background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); color: white; overflow: hidden; }
         .screen { display: none; width: 100vw; height: 100vh; }
         .screen.active { display: flex; }
         
-        /* 모달 (로그인/방만들기 등) 박스 디자인 */
         .modal-box { background: rgba(255, 255, 255, 0.95); padding: 35px 30px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); width: 85%; max-width: 350px; text-align: center; color: #333; }
         .modal-box h1, .modal-box h2 { margin: 0 0 20px 0; color: #2c3e50; font-weight: 900; letter-spacing: -1px; }
         
-        /* 인풋 필드 디자인 */
         .input-field { width: 100%; box-sizing: border-box; padding: 15px; margin-bottom: 12px; border: 2px solid #e0e6ed; border-radius: 10px; font-size: 15px; transition: border 0.3s; background: white; color: #333; }
         .input-field:focus { border-color: #3498db; outline: none; }
         
-        /* 버튼 디자인 */
         .btn { width: 100%; box-sizing: border-box; padding: 15px; border: none; border-radius: 10px; font-size: 16px; font-weight: bold; cursor: pointer; transition: transform 0.1s, box-shadow 0.2s; margin-bottom: 10px; color: white; }
         .btn:active { transform: scale(0.97); }
         .btn-blue { background: linear-gradient(to right, #3498db, #2980b9); box-shadow: 0 4px 15px rgba(52, 152, 219, 0.4); }
@@ -26,13 +22,11 @@
         .btn-red { background: linear-gradient(to right, #e74c3c, #c0392b); box-shadow: 0 4px 15px rgba(231, 76, 60, 0.4); }
         .btn-yellow { background: linear-gradient(to right, #f1c40f, #f39c12); box-shadow: 0 4px 15px rgba(241, 196, 15, 0.4); }
         
-        /* 로비 테이블 */
         .lobby-table { width: 100%; background: white; color: #333; border-radius: 10px; overflow: hidden; border-collapse: collapse; box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
         .lobby-table th { background: #34495e; color: white; padding: 15px; font-weight: normal; }
         .lobby-table td { padding: 12px; border-bottom: 1px solid #ecf0f1; text-align: center; }
         .lobby-table tr:hover { background: #f8f9fa; cursor: pointer; }
         
-        /* 커스텀 스크롤바 */
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.3); border-radius: 3px; }
@@ -133,7 +127,7 @@
         </div>
     </div>
 
-    <div id="screen-game" style="display: none; width: 100vw; height: 100vh; flex-direction: row;">
+    <div id="screen-game" class="screen" style="flex-direction: row;">
         <div id="battleContainer" style="flex: 1; position: relative;">
             <div style="position: absolute; top: 15px; left: 0; width: 100%; text-align: center; pointer-events: none; z-index: 10;">
                 <h2 id="roundText" style="color: white; text-shadow: 2px 2px 5px rgba(0,0,0,0.8); margin: 0; font-size: 32px;">대기 중...</h2>
