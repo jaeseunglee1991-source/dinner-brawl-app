@@ -1,10 +1,27 @@
 // public/js/ui.js
 
-function showScreen(id) {
-    document.querySelectorAll('.screen, #screen-game').forEach(el => el.classList.remove('active'));
-    document.getElementById(id).classList.add('active');
-    if(id === 'screen-game') { setTimeout(() => window.dispatchEvent(new Event('resize')), 100); }
-}
+// 🛠️ 전역 변수 안전장치 (하얀 화면 멈춤 방지)
+window.entities = window.entities || {};
+window.meshMap = window.meshMap || {};
+window.isReplaying = window.isReplaying || false;
+window.replayTimeouts = window.replayTimeouts || [];
+window.playersData = window.playersData || [];
+window.currentThemeRoom = window.currentThemeRoom || null;
+
+window.showScreen = function(id) {
+    document.querySelectorAll('.screen, #screen-game').forEach(el => {
+        el.classList.remove('active');
+        if (el.id === 'screen-game') el.style.display = 'none'; // 평소엔 확실히 가림
+    });
+    const target = document.getElementById(id);
+    if (target) {
+        target.classList.add('active');
+        if (id === 'screen-game') { 
+            target.style.display = 'flex'; // ⭐️ 게임 화면일 땐 인라인 스타일을 무시하고 강제로 엶
+            setTimeout(() => window.dispatchEvent(new Event('resize')), 100); 
+        }
+    }
+};
 
 function toggleRightPanel() {
     const rp = document.getElementById('rightPanel');
@@ -35,7 +52,7 @@ function closeModal() { document.getElementById('infoModal').style.display = 'no
 
 window.showCardDetail = function(cardId) {
     let card = null;
-    playersData.forEach(p => { let found = p.deck.find(c => c.id === cardId); if(found) card = found; });
+    window.playersData.forEach(p => { let found = p.deck.find(c => c.id === cardId); if(found) card = found; });
     if(!card) return;
 
     let skillStr = card.skills.map(s => `[${s.name}] <span style="color:#555;">${s.desc}</span>`).join('<br>');
@@ -74,16 +91,15 @@ function doLogout() { if(confirm('로그아웃 하시겠습니까?')) window.loc
 socket.on('errorMsg', msg => alert(msg));
 socket.on('authSuccess', msg => { alert(msg); toggleAuth('login'); });
 
-// 🛠️ 버그 수정됨: 로그인 성공 시 로비 화면으로 넘어가게 수정
 socket.on('loginSuccess', data => {
     myUserId = data.userId; 
     myNickname = data.nickname; 
     isAdmin = data.isAdmin;
     document.getElementById('welcomeMsg').innerText = `${isAdmin ? '👑관리자' : '👤'} ${myNickname}님 환영합니다!`;
-    showScreen('screen-lobby'); // <-- 이 한 줄이 빠져서 멈춰있었습니다!
+    showScreen('screen-lobby'); 
 });
 
-socket.on('kicked', msg => { alert(msg); history.replaceState(null, '', window.location.pathname); showScreen('screen-roomlist'); });
+socket.on('kicked', msg => { alert(msg); history.replaceState(null, '', window.location.pathname); showScreen('screen-lobby'); });
 
 socket.on('updateRoomList', (list) => {
     const tbody = document.getElementById('roomTableBody'); tbody.innerHTML = '';
@@ -98,8 +114,8 @@ socket.on('updateRoomList', (list) => {
                 <td><button class="btn btn-blue" style="padding:6px;font-size:12px;width:auto;margin-bottom:0;" onclick="event.stopPropagation(); spectateRoom('${room.id}')">👁️ 관전</button> ${adminBtn}</td>
             </tr>`;
     });
-    if (myUserId && !initialRouteHandled) {
-        initialRouteHandled = true; const targetRoomId = new URLSearchParams(window.location.search).get('room');
+    if (myUserId && !window.initialRouteHandled) {
+        window.initialRouteHandled = true; const targetRoomId = new URLSearchParams(window.location.search).get('room');
         if (targetRoomId) { const room = list.find(r => r.id === targetRoomId); if(room) selectRoomToJoin(room.id, room.name, room.hasPassword, room.state, room.mode); else { alert('존재하지 않는 방입니다.'); history.replaceState(null, '', window.location.pathname); showScreen('screen-lobby'); } }
         else showScreen('screen-lobby');
     }
@@ -159,10 +175,10 @@ window.copyRoomLink = function() {
 };
 
 window.cancelParticipation = function() { 
-    if(confirm('참가를 취소하시겠습니까?')) { socket.emit('cancelParticipation', myRoomId); history.replaceState(null, '', window.location.pathname); showScreen('screen-roomlist'); } 
+    if(confirm('참가를 취소하시겠습니까?')) { socket.emit('cancelParticipation', myRoomId); history.replaceState(null, '', window.location.pathname); showScreen('screen-lobby'); } 
 };
 window.leaveRoomUI = function() { 
-    if(confirm('방에서 나가시겠습니까?')) { socket.emit('cancelParticipation', myRoomId); history.replaceState(null, '', window.location.pathname); showScreen('screen-roomlist'); }
+    if(confirm('방에서 나가시겠습니까?')) { socket.emit('cancelParticipation', myRoomId); history.replaceState(null, '', window.location.pathname); showScreen('screen-lobby'); }
 };
 
 window.deleteRoom = function(id) { if(confirm('방을 폭파하시겠습니까?')) socket.emit('deleteRoom', id); };
@@ -177,18 +193,24 @@ window.clearBattleField = function() {
     document.getElementById('playerList').innerHTML = '';
     document.getElementById('replayBtn').style.display = 'none';
     
-    if (typeof scene !== 'undefined' && scene) { Object.values(meshMap).forEach(mesh => scene.remove(mesh)); }
-    entities = {}; meshMap = {}; isReplaying = false;
-    if(typeof replayTimeouts !== 'undefined') { replayTimeouts.forEach(clearTimeout); replayTimeouts = []; }
+    // 🛠️ 에러 안전 처리
+    if (typeof scene !== 'undefined' && scene && window.meshMap) { 
+        Object.values(window.meshMap).forEach(mesh => scene.remove(mesh)); 
+    }
+    window.entities = {}; 
+    window.meshMap = {}; 
+    window.isReplaying = false;
+    if(window.replayTimeouts) { window.replayTimeouts.forEach(clearTimeout); }
+    window.replayTimeouts = [];
 };
 
 window.handleUIUpdatePlayers = function(data) {
-    playersData = data.players;
-    document.getElementById('playerCount').innerText = `참가자: ${playersData.length}명`;
-    document.getElementById('playerList').innerHTML = playersData.map(p => `<span style="margin-right:8px;">${p.ownerId === data.masterId ? "👑" : (p.id==='SYSTEM_BOSS'?"👹":"👤")}${p.name}</span>`).join('');
+    window.playersData = data.players;
+    document.getElementById('playerCount').innerText = `참가자: ${window.playersData.length}명`;
+    document.getElementById('playerList').innerHTML = window.playersData.map(p => `<span style="margin-right:8px;">${p.ownerId === data.masterId ? "👑" : (p.id==='SYSTEM_BOSS'?"👹":"👤")}${p.name}</span>`).join('');
 
     const cardList = document.getElementById('cardList'); cardList.innerHTML = '';
-    playersData.forEach(p => {
+    window.playersData.forEach(p => {
         p.deck.forEach(c => {
             cardList.innerHTML += `
                 <div class="card-item ${c.isAlive ? '' : 'dead'}" style="border-left-color: ${c.gradeColor}; padding: 10px; margin-bottom: 5px; background: #34495e; border-left: 5px solid; cursor: pointer;" onclick="showCardDetail('${c.id}')">
@@ -214,18 +236,20 @@ window.handleGameFinished = function(menu) {
     document.getElementById('replayBtn').style.display = 'block'; 
 };
 
-socket.on('updatePlayers', data => { if(!isReplaying) handleUIUpdatePlayers(data); });
-socket.on('battleLog', data => { if(!isReplaying) handleBattleLog(data); });
-socket.on('gameFinished', data => { if(!isReplaying) handleGameFinished(data); });
+socket.on('updatePlayers', data => { if(!window.isReplaying) handleUIUpdatePlayers(data); });
+socket.on('battleLog', data => { if(!window.isReplaying) handleBattleLog(data); });
+socket.on('gameFinished', data => { if(!window.isReplaying) handleGameFinished(data); });
 
 socket.on('joined', (data) => {
     myRoomId = data.roomId; history.pushState(null, '', '?room=' + data.roomId);
-    clearBattleField(); 
+    window.clearBattleField(); 
     document.getElementById('startBtn').style.display = (data.isMaster && data.state === 'waiting') ? 'block' : 'none';
     document.getElementById('deleteBtn').style.display = data.isMaster ? 'block' : 'none'; 
     document.getElementById('copyLinkBtn').style.display = 'block'; document.getElementById('leaveBtn').style.display = 'block'; 
     document.getElementById('cancelBtn').style.display = (!data.isSpectator && data.state === 'waiting') ? 'block' : 'none';
     if (data.isSpectator && data.state !== 'waiting') document.getElementById('replayBtn').style.display = 'block';
+    
+    // ⭐️ 이제 완벽하게 화면이 넘어갑니다
     showScreen('screen-game');
 });
 
@@ -250,7 +274,7 @@ window.requestReplay = function() { socket.emit('requestReplay', myRoomId); };
 
 socket.on('startReplay', (replayData) => {
     alert('📼 리플레이 재생을 시작합니다!');
-    clearBattleField(); isReplaying = true;
+    window.clearBattleField(); window.isReplaying = true;
     const initialData = { players: replayData.initialPlayers, masterId: replayData.masterId };
     handleUIUpdatePlayers(initialData); handle3DUpdatePlayers(initialData);
 
@@ -259,8 +283,8 @@ socket.on('startReplay', (replayData) => {
             if(item.event === 'updatePlayers') { handleUIUpdatePlayers(item.data); handle3DUpdatePlayers(item.data); }
             if(item.event === 'playBrawlAnimation') handlePlayBrawlAnimation(item.data);
             if(item.event === 'battleLog') handleBattleLog(item.data);
-            if(item.event === 'gameFinished') { handleGameFinished(item.data); isReplaying = false; }
+            if(item.event === 'gameFinished') { handleGameFinished(item.data); window.isReplaying = false; }
         }, item.time);
-        replayTimeouts.push(tid);
+        window.replayTimeouts.push(tid);
     });
 });
