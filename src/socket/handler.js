@@ -1,9 +1,8 @@
-// src/socket/handler.js
-const { generateDeck, calculateAttack, getRandomItem } = require('../game/battle');
+const { generateDeck, calculateAttack, getRandomItem, generateBoss } = require('../game/battle');
 
 module.exports = function(io, pool, rooms) {
 
-    const getRoomList = () => Object.keys(rooms).map(id => ({ id: id, name: rooms[id].name, hasPassword: !!rooms[id].password, players: Object.keys(rooms[id].players).length, state: rooms[id].state }));
+    const getRoomList = () => Object.keys(rooms).map(id => ({ id: id, name: rooms[id].name, hasPassword: !!rooms[id].password, players: Object.keys(rooms[id].players).length, state: rooms[id].state, mode: rooms[id].mode }));
 
     function applyDamageEvents(roomId, attackEvents, allAliveCards, emitToRoom) {
         attackEvents.forEach(ev => {
@@ -38,11 +37,7 @@ module.exports = function(io, pool, rooms) {
 
         function emitToRoom(event, data) {
             io.to(roomId).emit(event, data);
-            room.replay.push({ 
-                time: Date.now() - battleStartTime, 
-                event, 
-                data: JSON.parse(JSON.stringify(data)) 
-            });
+            room.replay.push({ time: Date.now() - battleStartTime, event, data: JSON.parse(JSON.stringify(data)) });
         }
 
         const broadcastState = () => emitToRoom('updatePlayers', { players: Object.values(rooms[roomId].players), masterId: rooms[roomId].master });
@@ -51,14 +46,10 @@ module.exports = function(io, pool, rooms) {
         const getAliveTeams = () => Object.values(players).filter(p => p.deck.some(c => c.isAlive));
 
         Object.values(players).forEach(p => {
-            p.deck.forEach(c => {
-                // ⭐️ 직업에 설정된 기본 공격 속도를 그대로 사용! (초기 쿨다운만 분산)
-                c.cooldown = Math.random() * 800 + 200; 
-            });
+            p.deck.forEach(c => { c.cooldown = Math.random() * 800 + 200; });
         });
 
         const tickRate = 100; 
-        
         const battleLoop = setInterval(() => {
             if(!rooms[roomId]) return clearInterval(battleLoop);
 
@@ -100,9 +91,75 @@ module.exports = function(io, pool, rooms) {
         }, tickRate);
     }
 
+    function runRaidBattle(roomId) {
+        const room = rooms[roomId]; if(!room) return;
+        let players = room.players;
+        room.replay = [];
+        
+        let playerCount = Object.keys(players).length;
+        let bossCard = generateBoss(roomId, room.bossName, playerCount);
+        players['SYSTEM_BOSS'] = { id: 'SYSTEM_BOSS', ownerId: 'SYSTEM', name: '보스 몬스터', deck: [bossCard] };
+        
+        room.initialPlayers = JSON.parse(JSON.stringify(Object.values(room.players)));
+        const battleStartTime = Date.now();
+
+        function emitToRoom(event, data) {
+            io.to(roomId).emit(event, data);
+            room.replay.push({ time: Date.now() - battleStartTime, event, data: JSON.parse(JSON.stringify(data)) });
+        }
+
+        const broadcastState = () => emitToRoom('updatePlayers', { players: Object.values(rooms[roomId].players), masterId: rooms[roomId].master });
+        emitToRoom('battleLog', `=== 🚨 <b>거대 보스 [${bossCard.menu}] 레이드가 시작되었습니다!</b> 🚨 ===`);
+        
+        Object.values(players).forEach(p => { p.deck.forEach(c => { c.cooldown = Math.random() * 800 + 200; }); });
+
+        const tickRate = 100; 
+        const raidLoop = setInterval(() => {
+            if(!rooms[roomId]) return clearInterval(raidLoop);
+
+            let humanCards = Object.values(players).filter(p => p.id !== 'SYSTEM_BOSS').flatMap(p => p.deck.filter(c => c.isAlive));
+            let bossCardRef = players['SYSTEM_BOSS'].deck[0];
+
+            if (!bossCardRef.isAlive) {
+                clearInterval(raidLoop);
+                emitToRoom('battleLog', `<div style="color:#f1c40f; font-weight:bold; margin-top:10px;">🎉 보스 레이드 성공! 인간 연합의 승리입니다! 🎉</div>`);
+                emitToRoom('gameFinished', '인간 연합 (보스 토벌)');
+                return;
+            }
+            if (humanCards.length === 0) {
+                clearInterval(raidLoop);
+                emitToRoom('battleLog', `<div style="color:#e74c3c; font-weight:bold; margin-top:10px;">💀 보스 레이드 실패... 모두 전멸했습니다. 💀</div>`);
+                emitToRoom('gameFinished', bossCardRef.menu);
+                return;
+            }
+
+            let allAliveCards = [...humanCards, bossCardRef];
+            let attackEvents = [];
+
+            for (let attacker of allAliveCards) {
+                attacker.cooldown -= tickRate;
+                if (attacker.cooldown <= 0) {
+                    let target;
+                    if (attacker.isBoss) target = getRandomItem(humanCards);
+                    else target = bossCardRef;
+                    
+                    let ev = calculateAttack(attacker, target, allAliveCards, io);
+                    attackEvents.push(ev);
+                    emitToRoom('battleLog', ev.msg + ` <span style="color:#e74c3c">[-${ev.damage}]</span>`);
+                    attacker.cooldown = attacker.maxCooldown + (Math.random() * 200 - 100);
+                }
+            }
+
+            if (attackEvents.length > 0) {
+                emitToRoom('playBrawlAnimation', attackEvents);
+                applyDamageEvents(roomId, attackEvents, allAliveCards, emitToRoom);
+                broadcastState();
+            }
+        }, tickRate);
+    }
+
     function startDeathMatch(roomId, winnerTeam, broadcastState, emitToRoom, battleStartTime) {
         const tickRate = 100;
-        
         const dmLoop = setInterval(() => {
             if(!rooms[roomId]) return clearInterval(dmLoop);
 
@@ -142,12 +199,12 @@ module.exports = function(io, pool, rooms) {
         socket.on('register', async ({ id, pw, nickname }) => { try { const res = await pool.query('SELECT id FROM users WHERE id = $1', [id]); if (res.rows.length > 0) return socket.emit('errorMsg', '이미 존재하는 ID입니다.'); await pool.query('INSERT INTO users (id, pw, nickname) VALUES ($1, $2, $3)', [id, pw, nickname]); socket.emit('authSuccess', '회원가입이 완료되었습니다.'); } catch (err) { socket.emit('errorMsg', '서버 오류'); } });
         socket.on('login', async ({ id, pw }) => { try { const res = await pool.query('SELECT * FROM users WHERE id = $1', [id]); if (res.rows.length === 0) return socket.emit('errorMsg', '존재하지 않는 ID입니다.'); const user = res.rows[0]; if (user.pw !== pw) return socket.emit('errorMsg', '비번오류'); socket.userId = user.id; socket.nickname = user.nickname; socket.isAdmin = user.is_admin; socket.emit('loginSuccess', { userId: user.id, nickname: user.nickname, isAdmin: user.is_admin }); socket.emit('updateRoomList', getRoomList()); } catch (err) { socket.emit('errorMsg', '서버 오류'); } });
         
-        socket.on('createRoom', ({ roomName, password, menus }) => {
+        socket.on('createRoom', ({ roomName, password, menus, gameMode, bossName }) => {
             const roomId = Math.random().toString(36).substr(2, 6);
-            rooms[roomId] = { name: roomName, password: password, master: socket.userId, players: {}, state: 'waiting' };
+            rooms[roomId] = { name: roomName, password: password, master: socket.userId, players: {}, state: 'waiting', mode: gameMode || 'brawl', bossName: bossName || '' };
             socket.join(roomId); let deck = generateDeck(socket.nickname, menus); deck.forEach(c => { c.roomId = roomId; c.ownerId = socket.userId; });
             rooms[roomId].players[socket.userId] = { id: socket.id, ownerId: socket.userId, name: socket.nickname, deck };
-            socket.emit('joined', { roomId, isMaster: true, isSpectator: false, state: 'waiting' });
+            socket.emit('joined', { roomId, isMaster: true, isSpectator: false, state: 'waiting', mode: rooms[roomId].mode });
             io.to(roomId).emit('updatePlayers', { players: Object.values(rooms[roomId].players), masterId: rooms[roomId].master }); io.emit('updateRoomList', getRoomList());
         });
 
@@ -155,7 +212,7 @@ module.exports = function(io, pool, rooms) {
             const room = rooms[roomId]; if(!room) return;
             socket.join(roomId); let deck = generateDeck(socket.nickname, menus); deck.forEach(c => { c.roomId = roomId; c.ownerId = socket.userId; });
             room.players[socket.userId] = { id: socket.id, ownerId: socket.userId, name: socket.nickname, deck };
-            socket.emit('joined', { roomId, isMaster: room.master === socket.userId, isSpectator: false, state: room.state });
+            socket.emit('joined', { roomId, isMaster: room.master === socket.userId, isSpectator: false, state: room.state, mode: room.mode });
             io.to(roomId).emit('updatePlayers', { players: Object.values(room.players), masterId: room.master });
             io.to(roomId).emit('chatMessage', { sender: 'System', text: `${socket.nickname}님이 입장했습니다.` }); io.emit('updateRoomList', getRoomList());
         });
@@ -163,7 +220,7 @@ module.exports = function(io, pool, rooms) {
         socket.on('spectateRoom', (roomId) => {
             const room = rooms[roomId]; if(!room) return;
             socket.join(roomId);
-            socket.emit('joined', { roomId, isMaster: room.master === socket.userId, isSpectator: true, state: room.state });
+            socket.emit('joined', { roomId, isMaster: room.master === socket.userId, isSpectator: true, state: room.state, mode: room.mode });
             socket.emit('updatePlayers', { players: Object.values(room.players), masterId: room.master });
             io.to(roomId).emit('chatMessage', { sender: 'System', text: `👁️ ${socket.nickname}님이 관전자로 입장했습니다.` });
         });
@@ -180,6 +237,15 @@ module.exports = function(io, pool, rooms) {
         socket.on('cancelParticipation', (roomId) => { const room = rooms[roomId]; if (room && room.players[socket.userId]) { delete room.players[socket.userId]; socket.leave(roomId); io.to(roomId).emit('updatePlayers', { players: Object.values(room.players), masterId: room.master }); io.emit('updateRoomList', getRoomList()); } });
         socket.on('deleteRoom', (roomId) => { const room = rooms[roomId]; if(room && (socket.isAdmin || room.master === socket.userId)) { io.to(roomId).emit('kicked', `🚨 방이 폭파되었습니다!`); delete rooms[roomId]; io.emit('updateRoomList', getRoomList()); } });
         socket.on('chatMessage', (data) => io.to(data.roomId).emit('chatMessage', { sender: data.sender, text: data.text }));
-        socket.on('startGame', (roomId) => { if (rooms[roomId] && rooms[roomId].master === socket.userId) { rooms[roomId].state = 'playing'; io.emit('updateRoomList', getRoomList()); runBattle(roomId); } });
+        
+        socket.on('startGame', (roomId) => { 
+            const room = rooms[roomId];
+            if (room && room.master === socket.userId) { 
+                room.state = 'playing'; 
+                io.emit('updateRoomList', getRoomList()); 
+                if (room.mode === 'raid') runRaidBattle(roomId);
+                else runBattle(roomId); 
+            } 
+        });
     });
 };
