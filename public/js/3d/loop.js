@@ -1,12 +1,9 @@
-// public/js/3d/loop.js
-
 function gameLoop() {
     requestAnimationFrame(gameLoop);
     if (!scene || !camera || !renderer) return;
 
     const time = Date.now() * 0.003;
 
-    // 1️⃣ 캐릭터 렌더링
     Object.values(entities).forEach(e => {
         if(!e.isAlive) {
             if(meshMap[e.id]) { scene.remove(meshMap[e.id]); delete meshMap[e.id]; }
@@ -15,7 +12,12 @@ function gameLoop() {
 
         if(!meshMap[e.id]) {
             const charModel = createDetailedCharacter(e.job, e.color);
-            charModel.scale.set(1.8, 1.8, 1.8);
+            // ⭐️ 핵심: 보스 몬스터면 크기를 4.5배로 증폭시키고, 일반 플레이어는 1.8배 유지
+            if (e.isBoss) {
+                charModel.scale.set(4.5, 4.5, 4.5);
+            } else {
+                charModel.scale.set(1.8, 1.8, 1.8);
+            }
             scene.add(charModel); 
             meshMap[e.id] = charModel;
         }
@@ -65,7 +67,6 @@ function gameLoop() {
         }
     });
     
-    // 2️⃣ 투사체 렌더링
     for (let i = projectiles.length - 1; i >= 0; i--) {
         let p = projectiles[i];
         
@@ -95,6 +96,4 @@ function gameLoop() {
     
     renderer.render(scene, camera);
 }
-
-// 최초 1회 루프 시작
 gameLoop();
