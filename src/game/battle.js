@@ -1,10 +1,8 @@
-// src/game/battle.js
 const { AFFINITIES, SKILLS, JOBS, GRADES } = require('../data/constants');
 
 const random = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 const getRandomItem = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
-// 🗺️ 방 ID를 기반으로 맵 테마 추출 (프론트엔드와 동일한 공식)
 function getRoomTheme(roomId) {
     let hash = 0;
     for (let i = 0; i < roomId.length; i++) hash += roomId.charCodeAt(i);
@@ -20,13 +18,11 @@ const BOSS_TEMPLATES = {
     'RUINS': { job: '버서커', title: '고대 수호자', affinity: 'SWEET', color: '#95a5a6', skills: ['FRENZY', 'COMBO', 'PHOENIX'] }
 };
 
-// 👹 보스 몬스터 생성 로직
 function generateBoss(roomId, customName, playerCount) {
     const theme = getRoomTheme(roomId);
     const template = BOSS_TEMPLATES[theme];
     const bossName = customName ? customName : template.title;
 
-    // 인원수 1명당 3인분의 힘을 가지므로, 보스는 인원수 * 3 * 1.5(난이도 보정)의 배수를 갖습니다.
     const statMultiplier = playerCount * 3 * 1.5; 
     const jobData = JOBS.find(j => j.name === template.job) || JOBS[0];
 
@@ -35,7 +31,7 @@ function generateBoss(roomId, customName, playerCount) {
         menu: `👑 ${bossName} (${template.title})`,
         owner: 'SYSTEM',
         ownerId: 'SYSTEM',
-        grade: '신화', // 보스는 무조건 신화급
+        grade: '신화',
         gradeColor: template.color,
         job: template.job,
         maxHp: Math.floor(random(200, 300) * statMultiplier) + (jobData.hpBonus * statMultiplier),
@@ -44,10 +40,10 @@ function generateBoss(roomId, customName, playerCount) {
         maxMp: 999, mp: 999,
         affinity: template.affinity,
         skills: template.skills.map(skName => SKILLS.find(s => s.name === skName)),
-        maxCooldown: jobData.atkSpeed - 300, // 보스는 플레이어보다 살짝 더 빨리 공격함
+        maxCooldown: jobData.atkSpeed - 300,
         cooldown: 500,
         isAlive: true,
-        isBoss: true // 프론트엔드에서 크기를 키우기 위한 식별자
+        isBoss: true
     };
 }
 
@@ -61,6 +57,7 @@ function generateDeck(playerName, menus) {
         if (has('WEAK')) card.maxHp -= 50;
         if (has('SWORD_MASTER')) card.atk += 10;
         if (has('SOFT_PUNCH')) card.atk = Math.max(1, Math.floor(card.atk / 2));
+        
         card.hp = card.maxHp; 
         if (card.hp <= 0) { card.hp = 1; card.maxHp = 1; }
         if (has('PHOENIX')) card.revived = false; 
@@ -75,7 +72,9 @@ function generateDeck(playerName, menus) {
             let sum = 0; let tempGrade = GRADES[GRADES.length - 1]; 
             for (let g of GRADES) { sum += g.prob; if (rand <= sum) { tempGrade = g; break; } }
             
-            let baseHp = random(150, 250); let baseAtk = random(15, 25);
+            let baseHp = random(150, 250);
+            let baseAtk = random(15, 25);
+            
             poolHp += Math.floor((baseHp * tempGrade.multi) + tempJob.hpBonus);
             poolAtk += Math.floor((baseAtk * tempGrade.multi) + tempJob.atkBonus);
             poolMp += tempJob.maxMp;
@@ -89,11 +88,13 @@ function generateDeck(playerName, menus) {
         for (let g of GRADES) { sum += g.prob; if (rand <= sum) { grade = g; break; } }
         let affinity = getRandomItem(AFFINITIES);
 
-        let finalHp, finalAtk, finalMp, assignedSkills = [];
+        let finalHp, finalAtk, finalMp;
+        let assignedSkills = [];
 
         if (menus.length === 1) {
             finalHp = poolHp; finalAtk = poolAtk; finalMp = poolMp;
-            let sk1 = getRandomItem(SKILLS); let sk2 = getRandomItem(SKILLS);
+            let sk1 = getRandomItem(SKILLS);
+            let sk2 = getRandomItem(SKILLS);
             while(sk1.name === sk2.name) sk2 = getRandomItem(SKILLS);
             assignedSkills = [sk1, sk2];
         } else if (menus.length === 2) {
@@ -115,11 +116,13 @@ function generateDeck(playerName, menus) {
             maxCooldown: job.atkSpeed, isAlive: true, isBoss: false
         }));
     });
+    
     return deck;
 }
 
 function calculateAttack(attacker, target, allAliveCards, io) {
-    let damage = attacker.atk; let attackerDamage = 0, heal = 0, allyHealId = null;
+    let damage = attacker.atk;
+    let attackerDamage = 0, heal = 0, allyHealId = null;
     let msg = `[${attacker.menu}] ⚔️ [${target.menu}]`; let isCrit = false;
     
     if (attacker.mp >= 5) { attacker.mp -= 5; }
@@ -149,8 +152,13 @@ function calculateAttack(attacker, target, allAliveCards, io) {
     else if (has(attacker, 'CRITICAL') && Math.random() < 0.5) { damage *= 2; isCrit = true; }
 
     let terrainRoll = Math.random();
-    if (terrainRoll < 0.15) { damage = Math.floor(damage * 1.3); msg += ` <span style="color:#2ecc71">[⛰️고지대 강타!]</span>`; } 
-    else if (terrainRoll < 0.30) { damage = Math.floor(damage * 0.7); msg += ` <span style="color:#95a5a6">[🪨단차 엄폐!]</span>`; }
+    if (terrainRoll < 0.15) {
+        damage = Math.floor(damage * 1.3); 
+        msg += ` <span style="color:#2ecc71">[⛰️고지대 강타!]</span>`;
+    } else if (terrainRoll < 0.30) {
+        damage = Math.floor(damage * 0.7); 
+        msg += ` <span style="color:#95a5a6">[🪨단차 엄폐!]</span>`;
+    }
     
     if (has(attacker, 'IRON_FIST') && damage < 15) damage = 15;
     if (has(target, 'SHIELD')) damage = Math.floor(damage / 2);
