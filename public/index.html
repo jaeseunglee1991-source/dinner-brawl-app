@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>저녁 메뉴 3D 대난투</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+    <div id="infoModal" class="modal-overlay">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal()">닫기 ✖</button>
+            <h2 id="modalTitle">정보</h2>
+            <div id="modalBody" style="font-size: 14px; line-height: 1.6;"></div>
+        </div>
+    </div>
+
+    <div id="screen-auth" class="screen active">
+        <div id="login-form">
+            <h2>🔑 로그인</h2>
+            <input type="text" id="l_id" placeholder="아이디">
+            <input type="password" id="l_pw" placeholder="비밀번호" onkeypress="if(event.key==='Enter') doLogin()">
+            <button class="btn btn-blue" onclick="doLogin()">로그인</button>
+            <span class="text-link" onclick="toggleAuth('register')">계정이 없으신가요? 회원가입하기</span>
+        </div>
+        <div id="register-form" style="display:none;">
+            <h2>📝 회원가입</h2>
+            <input type="text" id="r_id" placeholder="아이디">
+            <input type="password" id="r_pw" placeholder="비밀번호">
+            <input type="text" id="r_nick" placeholder="게임에서 쓸 닉네임 (별명)" onkeypress="if(event.key==='Enter') doRegister()">
+            <button class="btn btn-green" onclick="doRegister()">가입하기</button>
+            <span class="text-link" onclick="toggleAuth('login')">이미 계정이 있으신가요? 로그인하기</span>
+        </div>
+    </div>
+
+    <div id="screen-lobby" class="screen">
+        <button class="btn-logout" onclick="doLogout()">로그아웃</button>
+        <h2>멀티플레이 로비</h2>
+        <p id="welcomeMsg" style="color: #2980b9; font-weight: bold;"></p>
+        <button class="btn btn-blue" onclick="showScreen('screen-create')">새 게임방 만들기</button>
+        <button class="btn btn-green" onclick="showScreen('screen-roomlist')">게임방 참가하기</button>
+    </div>
+
+    <div id="screen-create" class="screen">
+        <h2>🛠️ 새 게임방 만들기</h2>
+        <input type="text" id="c_roomName" placeholder="게임방 명칭 (필수)">
+        <input type="password" id="c_roomPw" placeholder="방 패스워드 (선택사항)">
+        <hr>
+        <p style="font-size:14px; color:#555;">먹고싶은 메뉴를 입력하세요</p>
+        <input type="text" id="c_menu1" placeholder="메뉴 1 (필수) ex) 피자">
+        <input type="text" id="c_menu2" placeholder="메뉴 2 (선택)">
+        <input type="text" id="c_menu3" placeholder="메뉴 3 (선택)">
+        <button class="btn btn-blue" onclick="createRoom()">방 생성 및 입장</button>
+        <button class="btn btn-gray" onclick="showScreen('screen-lobby')">뒤로 가기</button>
+    </div>
+
+    <div id="screen-roomlist" class="screen" style="max-width: 800px;">
+        <h2>🚪 활성화된 게임방 목록</h2>
+        <p style="font-size: 14px; color: #555;">방을 <b>더블클릭</b>하여 참가하거나, <b>관전</b> 버튼을 누르세요!</p>
+        <table>
+            <thead><tr><th>방제</th><th>상태</th><th>인원</th><th>잠금</th><th>액션</th></tr></thead>
+            <tbody id="roomTableBody"></tbody>
+        </table>
+        <button class="btn btn-gray" onclick="showScreen('screen-lobby')">로비로 돌아가기</button>
+    </div>
+
+    <div id="screen-join" class="screen">
+        <h2 id="j_roomTitle">방 참가</h2>
+        <input type="password" id="j_roomPw" placeholder="방 패스워드 입력" style="display:none;">
+        <hr>
+        <input type="text" id="j_menu1" placeholder="메뉴 1 (필수) ex) 치킨">
+        <input type="text" id="j_menu2" placeholder="메뉴 2 (선택)">
+        <input type="text" id="j_menu3" placeholder="메뉴 3 (선택)">
+        <button class="btn btn-green" onclick="joinRoom()">전장 입장</button>
+        <button class="btn btn-gray" onclick="cancelJoin()">취소 및 뒤로 가기</button>
+    </div>
+
+    <div id="screen-game">
+        <div class="battle-container" id="battleContainer">
+            <div class="battle-overlay"><div class="battle-text" id="roundText">대기 중...</div></div>
+            <canvas id="gameCanvas"></canvas>
+            
+            <div class="battle-ui-buttons">
+                <button id="startBtn" class="action-btn" style="display:none; background:#27ae60;" onclick="startGame()">⚔️ 대난투 시작</button>
+                <button id="copyLinkBtn" class="action-btn" style="display:none; background:#f39c12;" onclick="copyRoomLink()">🔗 초대 링크 복사</button>
+                <button id="cancelBtn" class="action-btn" style="display:none; background:#d35400;" onclick="cancelParticipation()">❌ 참가 취소</button>
+                <button id="leaveBtn" class="action-btn" style="display:none; background:#7f8c8d;" onclick="leaveRoomUI()">🚪 방 나가기</button>
+                <button id="deleteBtn" class="action-btn" style="display:none; background:#8e44ad;" onclick="reqDeleteRoom()">💣 방 폭파</button>
+                <button id="replayBtn" class="action-btn" style="display:none; background:#3498db;" onclick="requestReplay()">🔄 리플레이 보기</button>
+            </div>
+        </div>
+
+        <div class="bottom-container">
+            <button class="toggle-btn" onclick="toggleRightPanel()">▶ 정보창 접기/펴기</button>
+
+            <div class="panel chat-panel">
+                <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #7f8c8d; padding-bottom: 5px; margin-bottom: 5px;">
+                    <h3 style="margin: 0; border: none; padding: 0;">💬 실시간 채팅</h3>
+                    <span id="playerCount" style="font-size: 12px; color: #f1c40f;"></span>
+                </div>
+                <div id="playerList" style="font-size: 13px; color:#bdc3c7; margin-bottom:10px; background: #2c3e50; padding: 5px; border-radius: 3px;"></div>
+                
+                <div id="chatMessages"></div>
+                
+                <div class="chat-input-area">
+                    <input type="text" id="chatInput" placeholder="채팅 입력..." onkeypress="if(event.key==='Enter') sendChat()">
+                    <button onclick="sendChat()">전송</button>
+                </div>
+            </div>
+
+            <div class="panel log-panel">
+                <h3>📜 전투 로그 창</h3>
+                <div id="logMessages"></div>
+            </div>
+
+            <div class="panel right-panel" id="rightPanel">
+                <h3>🎴 특수 기술/상성/직업/등급</h3>
+                <div class="guide-buttons">
+                    <button class="guide-btn" onclick="openDict('job')">🛡️ 직업</button>
+                    <button class="guide-btn" onclick="openDict('grade')">⭐ 등급</button>
+                    <button class="guide-btn" onclick="openDict('affinity')" style="background-color: #e67e22;">🎭 상성</button>
+                    <button class="guide-btn" onclick="openDict('skill')" style="background-color: #e74c3c;">✨ 기술</button>
+                </div>
+                <h3 style="border:none; border-top: 1px solid #7f8c8d; padding-top:10px; margin-top:5px;">📋 카드 정보 판 (클릭)</h3>
+                <div id="cardList"></div>
+            </div>
+        </div>
+    </div>
+    <script src="/js/global.js"></script>
+    <script src="/js/ui.js"></script>
+
+    <script src="/js/3d/setup.js"></script>
+    <script src="/js/3d/environment.js"></script>
+    <script src="/js/3d/character.js"></script>
+    <script src="/js/3d/effect.js"></script>
+    
+    <script src="/js/3d/sync.js"></script>
+    <script src="/js/3d/loop.js"></script>
+</body>
