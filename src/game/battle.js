@@ -4,8 +4,6 @@ const { AFFINITIES, SKILLS, JOBS, GRADES } = require('../data/constants');
 const random = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 const getRandomItem = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
-const rollStat = () => ({ hp: random(150, 250), atk: random(15, 25) });
-
 function generateDeck(playerName, menus) {
     let deck = [];
     const getId = () => Math.random().toString(36).substr(2, 9);
@@ -16,37 +14,88 @@ function generateDeck(playerName, menus) {
         if (has('WEAK')) card.maxHp -= 50;
         if (has('SWORD_MASTER')) card.atk += 10;
         if (has('SOFT_PUNCH')) card.atk = Math.max(1, Math.floor(card.atk / 2));
+        
         card.hp = card.maxHp; 
         if (card.hp <= 0) { card.hp = 1; card.maxHp = 1; }
         if (has('PHOENIX')) card.revived = false; 
         return card;
     };
 
-    menus.forEach(menu => {
-        let job = getRandomItem(JOBS);
-        
-        let rand = Math.random() * 100;
-        let sum = 0;
-        let grade = GRADES[GRADES.length - 1]; 
-        for (let g of GRADES) {
-            sum += g.prob;
-            if (rand <= sum) { grade = g; break; }
+    // ⭐️ 스탯 풀(Pool) 생성: 1~2개 입력 시 무조건 3인분의 스탯을 독립 시행으로 굴려서 모아둡니다.
+    let poolHp = 0, poolAtk = 0, poolMp = 0;
+    if (menus.length < 3) {
+        for (let i = 0; i < 3; i++) {
+            let tempJob = getRandomItem(JOBS);
+            let rand = Math.random() * 100;
+            let sum = 0; let tempGrade = GRADES[GRADES.length - 1]; 
+            for (let g of GRADES) { sum += g.prob; if (rand <= sum) { tempGrade = g; break; } }
+            
+            let baseHp = random(150, 250);
+            let baseAtk = random(15, 25);
+            
+            poolHp += Math.floor((baseHp * tempGrade.multi) + tempJob.hpBonus);
+            poolAtk += Math.floor((baseAtk * tempGrade.multi) + tempJob.atkBonus);
+            poolMp += tempJob.maxMp;
         }
+    }
 
-        let baseHp = rollStat().hp;
-        let baseAtk = rollStat().atk;
+    menus.forEach((menu) => {
+        // 각 캐릭터 본인의 껍데기(직업, 등급, 상성)는 무조건 1번만 독립 시행으로 뽑습니다.
+        let job = getRandomItem(JOBS);
+        let rand = Math.random() * 100;
+        let sum = 0; let grade = GRADES[GRADES.length - 1]; 
+        for (let g of GRADES) { sum += g.prob; if (rand <= sum) { grade = g; break; } }
+        let affinity = getRandomItem(AFFINITIES);
+
+        let finalHp, finalAtk, finalMp;
+        let assignedSkills = [];
+
+        // ⭐️ 요구사항 1 & 2 분기 처리
+        if (menus.length === 1) {
+            // 1. 혼자서 3인분 스탯 독식
+            finalHp = poolHp;
+            finalAtk = poolAtk;
+            finalMp = poolMp;
+            
+            // 특수기술 2개 할당 (중복 방지)
+            let sk1 = getRandomItem(SKILLS);
+            let sk2 = getRandomItem(SKILLS);
+            while(sk1.name === sk2.name) sk2 = getRandomItem(SKILLS);
+            assignedSkills = [sk1, sk2];
+
+        } else if (menus.length === 2) {
+            // 2. 3인분 스탯을 1/2로 공평하게 분배
+            finalHp = Math.floor(poolHp / 2);
+            finalAtk = Math.floor(poolAtk / 2);
+            finalMp = Math.floor(poolMp / 2);
+            
+            // 특수기술 1개 할당
+            assignedSkills = [getRandomItem(SKILLS)];
+
+        } else {
+            // 3. 3개를 꽉 채웠을 때는 각자 본인의 1인분 스탯만 가져감
+            let baseHp = random(150, 250);
+            let baseAtk = random(15, 25);
+            finalHp = Math.floor((baseHp * grade.multi) + job.hpBonus);
+            finalAtk = Math.floor((baseAtk * grade.multi) + job.atkBonus);
+            finalMp = job.maxMp;
+            
+            assignedSkills = [getRandomItem(SKILLS)];
+        }
 
         deck.push(applyStartStats({ 
             id: getId(), menu: menu, owner: playerName, 
             grade: grade.name, gradeColor: grade.color, job: job.name,
-            maxHp: Math.floor(baseHp * grade.multi) + job.hpBonus, 
-            atk: Math.floor(baseAtk * grade.multi) + job.atkBonus,
-            maxMp: job.maxMp, mp: job.maxMp, affinity: getRandomItem(AFFINITIES), 
-            skills: [getRandomItem(SKILLS)], 
-            maxCooldown: job.atkSpeed, // ⭐️ 직업별 고유 공격 속도 저장
+            maxHp: finalHp, 
+            atk: finalAtk,
+            maxMp: finalMp, mp: finalMp, 
+            affinity: affinity, 
+            skills: assignedSkills, 
+            maxCooldown: job.atkSpeed, 
             isAlive: true 
         }));
     });
+    
     return deck;
 }
 
