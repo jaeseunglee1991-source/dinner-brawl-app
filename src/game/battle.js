@@ -4,6 +4,53 @@ const { AFFINITIES, SKILLS, JOBS, GRADES } = require('../data/constants');
 const random = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 const getRandomItem = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
+// 🗺️ 방 ID를 기반으로 맵 테마 추출 (프론트엔드와 동일한 공식)
+function getRoomTheme(roomId) {
+    let hash = 0;
+    for (let i = 0; i < roomId.length; i++) hash += roomId.charCodeAt(i);
+    const themes = ['VOLCANO', 'OCEAN', 'SNOW', 'DESERT', 'RUINS'];
+    return themes[hash % themes.length];
+}
+
+const BOSS_TEMPLATES = {
+    'VOLCANO': { job: '탱커', title: '용암 거인', affinity: 'SPICY', color: '#ff4757', skills: ['IRON_FIST', 'BERSERKER', 'SHIELD'] },
+    'OCEAN': { job: '마법사', title: '심해의 크라켄', affinity: 'SALTY', color: '#3498db', skills: ['MAGICIAN', 'VAMPIRE', 'CLUMSY'] },
+    'SNOW': { job: '전사', title: '얼음 드래곤', affinity: 'FRESH', color: '#c7ecee', skills: ['GIANT_KILLER', 'SHIELD', 'DOUBLE_ATTACK'] },
+    'DESERT': { job: '암살자', title: '모래 망령', affinity: 'GREASY', color: '#f39c12', skills: ['NINJA', 'SNIPER', 'CRITICAL'] },
+    'RUINS': { job: '버서커', title: '고대 수호자', affinity: 'SWEET', color: '#95a5a6', skills: ['FRENZY', 'COMBO', 'PHOENIX'] }
+};
+
+// 👹 보스 몬스터 생성 로직
+function generateBoss(roomId, customName, playerCount) {
+    const theme = getRoomTheme(roomId);
+    const template = BOSS_TEMPLATES[theme];
+    const bossName = customName ? customName : template.title;
+
+    // 인원수 1명당 3인분의 힘을 가지므로, 보스는 인원수 * 3 * 1.5(난이도 보정)의 배수를 갖습니다.
+    const statMultiplier = playerCount * 3 * 1.5; 
+    const jobData = JOBS.find(j => j.name === template.job) || JOBS[0];
+
+    return {
+        id: 'BOSS_' + Math.random().toString(36).substr(2, 9),
+        menu: `👑 ${bossName} (${template.title})`,
+        owner: 'SYSTEM',
+        ownerId: 'SYSTEM',
+        grade: '신화', // 보스는 무조건 신화급
+        gradeColor: template.color,
+        job: template.job,
+        maxHp: Math.floor(random(200, 300) * statMultiplier) + (jobData.hpBonus * statMultiplier),
+        hp: Math.floor(random(200, 300) * statMultiplier) + (jobData.hpBonus * statMultiplier),
+        atk: Math.floor(random(20, 30) * statMultiplier) + (jobData.atkBonus * statMultiplier),
+        maxMp: 999, mp: 999,
+        affinity: template.affinity,
+        skills: template.skills.map(skName => SKILLS.find(s => s.name === skName)),
+        maxCooldown: jobData.atkSpeed - 300, // 보스는 플레이어보다 살짝 더 빨리 공격함
+        cooldown: 500,
+        isAlive: true,
+        isBoss: true // 프론트엔드에서 크기를 키우기 위한 식별자
+    };
+}
+
 function generateDeck(playerName, menus) {
     let deck = [];
     const getId = () => Math.random().toString(36).substr(2, 9);
@@ -14,14 +61,12 @@ function generateDeck(playerName, menus) {
         if (has('WEAK')) card.maxHp -= 50;
         if (has('SWORD_MASTER')) card.atk += 10;
         if (has('SOFT_PUNCH')) card.atk = Math.max(1, Math.floor(card.atk / 2));
-        
         card.hp = card.maxHp; 
         if (card.hp <= 0) { card.hp = 1; card.maxHp = 1; }
         if (has('PHOENIX')) card.revived = false; 
         return card;
     };
 
-    // ⭐️ 스탯 풀(Pool) 생성: 1~2개 입력 시 무조건 3인분의 스탯을 독립 시행으로 굴려서 모아둡니다.
     let poolHp = 0, poolAtk = 0, poolMp = 0;
     if (menus.length < 3) {
         for (let i = 0; i < 3; i++) {
@@ -30,9 +75,7 @@ function generateDeck(playerName, menus) {
             let sum = 0; let tempGrade = GRADES[GRADES.length - 1]; 
             for (let g of GRADES) { sum += g.prob; if (rand <= sum) { tempGrade = g; break; } }
             
-            let baseHp = random(150, 250);
-            let baseAtk = random(15, 25);
-            
+            let baseHp = random(150, 250); let baseAtk = random(15, 25);
             poolHp += Math.floor((baseHp * tempGrade.multi) + tempJob.hpBonus);
             poolAtk += Math.floor((baseAtk * tempGrade.multi) + tempJob.atkBonus);
             poolMp += tempJob.maxMp;
@@ -40,68 +83,43 @@ function generateDeck(playerName, menus) {
     }
 
     menus.forEach((menu) => {
-        // 각 캐릭터 본인의 껍데기(직업, 등급, 상성)는 무조건 1번만 독립 시행으로 뽑습니다.
         let job = getRandomItem(JOBS);
         let rand = Math.random() * 100;
         let sum = 0; let grade = GRADES[GRADES.length - 1]; 
         for (let g of GRADES) { sum += g.prob; if (rand <= sum) { grade = g; break; } }
         let affinity = getRandomItem(AFFINITIES);
 
-        let finalHp, finalAtk, finalMp;
-        let assignedSkills = [];
+        let finalHp, finalAtk, finalMp, assignedSkills = [];
 
-        // ⭐️ 요구사항 1 & 2 분기 처리
         if (menus.length === 1) {
-            // 1. 혼자서 3인분 스탯 독식
-            finalHp = poolHp;
-            finalAtk = poolAtk;
-            finalMp = poolMp;
-            
-            // 특수기술 2개 할당 (중복 방지)
-            let sk1 = getRandomItem(SKILLS);
-            let sk2 = getRandomItem(SKILLS);
+            finalHp = poolHp; finalAtk = poolAtk; finalMp = poolMp;
+            let sk1 = getRandomItem(SKILLS); let sk2 = getRandomItem(SKILLS);
             while(sk1.name === sk2.name) sk2 = getRandomItem(SKILLS);
             assignedSkills = [sk1, sk2];
-
         } else if (menus.length === 2) {
-            // 2. 3인분 스탯을 1/2로 공평하게 분배
-            finalHp = Math.floor(poolHp / 2);
-            finalAtk = Math.floor(poolAtk / 2);
-            finalMp = Math.floor(poolMp / 2);
-            
-            // 특수기술 1개 할당
+            finalHp = Math.floor(poolHp / 2); finalAtk = Math.floor(poolAtk / 2); finalMp = Math.floor(poolMp / 2);
             assignedSkills = [getRandomItem(SKILLS)];
-
         } else {
-            // 3. 3개를 꽉 채웠을 때는 각자 본인의 1인분 스탯만 가져감
-            let baseHp = random(150, 250);
-            let baseAtk = random(15, 25);
+            let baseHp = random(150, 250); let baseAtk = random(15, 25);
             finalHp = Math.floor((baseHp * grade.multi) + job.hpBonus);
             finalAtk = Math.floor((baseAtk * grade.multi) + job.atkBonus);
             finalMp = job.maxMp;
-            
             assignedSkills = [getRandomItem(SKILLS)];
         }
 
         deck.push(applyStartStats({ 
             id: getId(), menu: menu, owner: playerName, 
             grade: grade.name, gradeColor: grade.color, job: job.name,
-            maxHp: finalHp, 
-            atk: finalAtk,
-            maxMp: finalMp, mp: finalMp, 
-            affinity: affinity, 
-            skills: assignedSkills, 
-            maxCooldown: job.atkSpeed, 
-            isAlive: true 
+            maxHp: finalHp, atk: finalAtk, maxMp: finalMp, mp: finalMp, 
+            affinity: affinity, skills: assignedSkills, 
+            maxCooldown: job.atkSpeed, isAlive: true, isBoss: false
         }));
     });
-    
     return deck;
 }
 
 function calculateAttack(attacker, target, allAliveCards, io) {
-    let damage = attacker.atk;
-    let attackerDamage = 0, heal = 0, allyHealId = null;
+    let damage = attacker.atk; let attackerDamage = 0, heal = 0, allyHealId = null;
     let msg = `[${attacker.menu}] ⚔️ [${target.menu}]`; let isCrit = false;
     
     if (attacker.mp >= 5) { attacker.mp -= 5; }
@@ -131,13 +149,8 @@ function calculateAttack(attacker, target, allAliveCards, io) {
     else if (has(attacker, 'CRITICAL') && Math.random() < 0.5) { damage *= 2; isCrit = true; }
 
     let terrainRoll = Math.random();
-    if (terrainRoll < 0.15) {
-        damage = Math.floor(damage * 1.3); 
-        msg += ` <span style="color:#2ecc71">[⛰️고지대 강타!]</span>`;
-    } else if (terrainRoll < 0.30) {
-        damage = Math.floor(damage * 0.7); 
-        msg += ` <span style="color:#95a5a6">[🪨단차 엄폐!]</span>`;
-    }
+    if (terrainRoll < 0.15) { damage = Math.floor(damage * 1.3); msg += ` <span style="color:#2ecc71">[⛰️고지대 강타!]</span>`; } 
+    else if (terrainRoll < 0.30) { damage = Math.floor(damage * 0.7); msg += ` <span style="color:#95a5a6">[🪨단차 엄폐!]</span>`; }
     
     if (has(attacker, 'IRON_FIST') && damage < 15) damage = 15;
     if (has(target, 'SHIELD')) damage = Math.floor(damage / 2);
@@ -160,4 +173,4 @@ function calculateAttack(attacker, target, allAliveCards, io) {
     return { attackerId: attacker.id, targetId: target.id, damage, attackerDamage, heal, allyHealId, isCrit, msg };
 }
 
-module.exports = { generateDeck, calculateAttack, getRandomItem };
+module.exports = { generateDeck, calculateAttack, getRandomItem, generateBoss };
