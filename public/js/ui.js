@@ -73,23 +73,29 @@ function doLogout() { if(confirm('로그아웃 하시겠습니까?')) window.loc
 
 socket.on('errorMsg', msg => alert(msg));
 socket.on('authSuccess', msg => { alert(msg); toggleAuth('login'); });
+
+// 🛠️ 버그 수정됨: 로그인 성공 시 로비 화면으로 넘어가게 수정
 socket.on('loginSuccess', data => {
-    myUserId = data.userId; myNickname = data.nickname; isAdmin = data.isAdmin;
+    myUserId = data.userId; 
+    myNickname = data.nickname; 
+    isAdmin = data.isAdmin;
     document.getElementById('welcomeMsg').innerText = `${isAdmin ? '👑관리자' : '👤'} ${myNickname}님 환영합니다!`;
+    showScreen('screen-lobby'); // <-- 이 한 줄이 빠져서 멈춰있었습니다!
 });
+
 socket.on('kicked', msg => { alert(msg); history.replaceState(null, '', window.location.pathname); showScreen('screen-roomlist'); });
 
 socket.on('updateRoomList', (list) => {
     const tbody = document.getElementById('roomTableBody'); tbody.innerHTML = '';
     list.forEach(room => {
-        let status = room.state === 'waiting' ? '<span style="color:green;font-weight:bold;">대기중</span>' : '<span style="color:red;">게임중</span>';
+        let status = room.state === 'waiting' ? '<span style="color:#2ecc71;font-weight:bold;">대기중</span>' : '<span style="color:#e74c3c;">게임중</span>';
         let lock = room.hasPassword ? '<span class="lock-icon">🔒</span>' : '🔓';
         let modeIcon = room.mode === 'raid' ? '👹' : '⚔️';
-        let adminBtn = isAdmin ? `<button class="btn-red" style="padding:4px;font-size:12px;" onclick="event.stopPropagation(); deleteRoom('${room.id}')">폭파</button>` : '';
+        let adminBtn = isAdmin ? `<button class="btn btn-red" style="padding:6px;font-size:12px;width:auto;" onclick="event.stopPropagation(); deleteRoom('${room.id}')">폭파</button>` : '';
         tbody.innerHTML += `
-            <tr ondblclick="selectRoomToJoin('${room.id}', '${room.name}', ${room.hasPassword}, '${room.state}', '${room.mode}')">
+            <tr onclick="selectRoomToJoin('${room.id}', '${room.name}', ${room.hasPassword}, '${room.state}', '${room.mode}')">
                 <td>${modeIcon} ${room.name}</td><td>${status}</td><td>${room.players}명</td><td>${lock}</td>
-                <td><button class="btn-blue" style="padding:6px;font-size:12px;" onclick="event.stopPropagation(); spectateRoom('${room.id}')">👁️ 관전</button> ${adminBtn}</td>
+                <td><button class="btn btn-blue" style="padding:6px;font-size:12px;width:auto;margin-bottom:0;" onclick="event.stopPropagation(); spectateRoom('${room.id}')">👁️ 관전</button> ${adminBtn}</td>
             </tr>`;
     });
     if (myUserId && !initialRouteHandled) {
@@ -185,9 +191,9 @@ window.handleUIUpdatePlayers = function(data) {
     playersData.forEach(p => {
         p.deck.forEach(c => {
             cardList.innerHTML += `
-                <div class="card-item ${c.isAlive ? '' : 'dead'}" style="border-left-color: ${c.gradeColor};" onclick="showCardDetail('${c.id}')">
-                    <b style="color:${c.gradeColor}">[${c.grade}]</b> <b>${c.menu}</b> <span style="font-size:11px;color:#888;">(${p.name})</span><br>
-                    직업: ${c.job} | HP: ${c.hp}/${c.maxHp} | MP: ${c.mp}
+                <div class="card-item ${c.isAlive ? '' : 'dead'}" style="border-left-color: ${c.gradeColor}; padding: 10px; margin-bottom: 5px; background: #34495e; border-left: 5px solid; cursor: pointer;" onclick="showCardDetail('${c.id}')">
+                    <b style="color:${c.gradeColor}">[${c.grade}]</b> <b>${c.menu}</b> <span style="font-size:11px;color:#bdc3c7;">(${p.name})</span><br>
+                    <span style="font-size:12px; color: #ecf0f1;">직업: ${c.job} | HP: ${c.hp}/${c.maxHp} | MP: ${c.mp}</span>
                 </div>`;
         });
     });
@@ -195,7 +201,7 @@ window.handleUIUpdatePlayers = function(data) {
 
 window.handleBattleLog = function(htmlMsg) {
     const logBox = document.getElementById('logMessages');
-    logBox.innerHTML += `<div>${htmlMsg}</div>`;
+    logBox.innerHTML += `<div style="margin-bottom: 4px;">${htmlMsg}</div>`;
     logBox.scrollTop = logBox.scrollHeight;
     document.getElementById('roundText').innerHTML = "전투 진행 중...";
 };
@@ -230,7 +236,7 @@ window.sendChat = function() {
 }
 socket.on('chatMessage', (data) => {
     const chatBox = document.getElementById('chatMessages');
-    let color = data.sender === 'System' ? 'color: #e74c3c;' : 'color: #2980b9; font-weight: bold;';
+    let color = data.sender === 'System' ? 'color: #e74c3c;' : 'color: #3498db; font-weight: bold;';
     chatBox.innerHTML += `<div style="margin-bottom: 5px;"><span style="${color}">${data.sender}:</span> ${data.text}</div>`;
     chatBox.scrollTop = chatBox.scrollHeight;
 });
